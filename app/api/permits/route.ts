@@ -1,12 +1,15 @@
-import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json([], { status: 500 });
+  }
+
   const { searchParams } = new URL(request.url);
   const north = parseFloat(searchParams.get('north') ?? '43.85');
   const south = parseFloat(searchParams.get('south') ?? '43.55');
@@ -14,25 +17,64 @@ export async function GET(request: Request) {
   const west  = parseFloat(searchParams.get('west')  ?? '-79.75');
   const status = searchParams.get('status') ?? 'all';
 
-  let query = supabase
-    .from('permits')
-    .select('*')
-    .gte('lat', south)
-    .lte('lat', north)
-    .gte('lng', west)
-    .lte('lng', east)
-    .limit(5000);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 7);
+  const cutoffDate = cutoff.toISOString().split('T')[0];
 
-  if (status !== 'all') {
-    query = query.eq('status', status);
-  }
+  const params = new URLSearchParams({
+    'lat': `gte.${south}`,
+    'lng': `gte.${west}`,
+    'application_date': `gte.${cutoffDate}`,
+    'limit': '5000',
+    'select': '*',
+  });
+  params.append('lat', `lte.${north}`);
+  params.append('lng', `lte.${east}`);
+  if (status !== 'all') params.set('status', `eq.${status}`);
 
-  const { data, error } = await query;
+  const res = await fetch(`${supabaseUrl}/rest/v1/permits?${params}`, {
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    },
+  });
 
-  if (error) {
-    console.error(error);
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('Supabase error:', err);
     return NextResponse.json([], { status: 500 });
   }
 
-  return NextResponse.json(data ?? []);
+  const rows: any[] = await res.json();
+
+  const permits = rows.map((r) => ({
+    id:              r.id,
+    permitNum:       r.permit_num,
+    address:         r.address,
+    lat:             r.lat,
+    lng:             r.lng,
+    status:          r.status,
+    rawStatus:       r.raw_status,
+    type:            r.type,
+    structureType:   r.structure_type,
+    work:            r.work,
+    description:     r.description,
+    applicationDate: r.application_date,
+    issuedDate:      r.issued_date,
+    completedDate:   r.completed_date,
+    units:           r.units,
+    unitsLost:       r.units_lost,
+    cost:            r.cost,
+    builder:         r.builder,
+    currentUse:      r.current_use,
+    proposedUse:     r.proposed_use,
+    residentialGFA:  r.residential_gfa,
+    commercialGFA:   r.commercial_gfa,
+    industrialGFA:   r.industrial_gfa,
+    ward:            r.ward,
+    municipality:    r.municipality,
+    postal:          r.postal,
+  }));
+
+  return NextResponse.json(permits);
 }

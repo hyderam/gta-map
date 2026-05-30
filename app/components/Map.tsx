@@ -120,11 +120,17 @@ function DetailPanel({ permit, onClose }: { permit: Permit; onClose: () => void 
           </div>
         )}
         <button
-          onClick={() => window.open('https://secure.toronto.ca/ApplicationStatus/setup.do?action=init', '_blank')}
+          onClick={() => {
+            navigator.clipboard.writeText(permit.permitNum).catch(() => {});
+            window.open('https://secure.toronto.ca/ApplicationStatus/search.do', '_blank');
+          }}
           style={{ display: 'block', marginTop: '16px', padding: '10px', background: '#1a1a1a', color: 'white', borderRadius: '8px', textAlign: 'center', fontSize: '13px', fontWeight: 500, border: 'none', cursor: 'pointer', width: '100%' }}
         >
-          View on City of Toronto
+          Search on City of Toronto
         </button>
+        <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '6px', marginBottom: 0 }}>
+          Permit # <strong style={{ color: '#555' }}>{permit.permitNum}</strong> will be copied to your clipboard
+        </p>
       </div>
     </div>
   );

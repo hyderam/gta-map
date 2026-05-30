@@ -14,6 +14,16 @@ async function main() {
   const permits = JSON.parse(data);
   console.log(`Total permits to upload: ${permits.length}`);
 
+  // Clear existing data before re-uploading
+  console.log('Clearing existing permits...');
+  const { error: deleteError } = await supabase.from('permits').delete().not('id', 'is', null);
+  if (deleteError) {
+    console.error('Delete failed:', deleteError.message);
+    console.log('Proceeding with upsert anyway (old records may remain)...');
+  } else {
+    console.log('Cleared.');
+  }
+
   const rows = permits.map((p: any) => ({
     id: p.id,
     permit_num: p.permitNum,
@@ -44,7 +54,6 @@ async function main() {
     source: p.source || 'permit',
   }));
 
-  // Upload in batches of 500
   const BATCH_SIZE = 500;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
