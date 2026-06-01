@@ -13,6 +13,18 @@ cutoff.setFullYear(cutoff.getFullYear() - 7);
 const CUTOFF_DATE = cutoff.toISOString().split('T')[0];
 console.log(`Date cutoff: ${CUTOFF_DATE}`);
 
+// Only show actual development/redevelopment — exclude maintenance, repairs, minor alterations
+const DEVELOPMENT_WORK_TYPES = new Set([
+  'New Building',
+  'Addition(s)',
+  'New Laneway / Rear Yard Suite',
+  'Second Suite (New)',
+  'Multiple Projects',
+  'New Building - By Renovation',
+  'New Building-Certified',
+  'Change of Use',
+]);
+
 function toTitleCase(str: string): string {
   return str.toLowerCase().split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ').trim();
 }
@@ -93,6 +105,8 @@ async function fetchAllBldPermits(): Promise<any[]> {
       if (!r.PERMIT_NUM?.trim().endsWith(' BLD')) continue;
       // Only keep permits within the last 7 years
       if (!r.APPLICATION_DATE || r.APPLICATION_DATE < CUTOFF_DATE) continue;
+      // Only keep actual development/redevelopment work types
+      if (!DEVELOPMENT_WORK_TYPES.has(r.WORK?.trim())) continue;
       allRecords.push(r);
     }
 
