@@ -95,10 +95,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const permit = await getPermit(decodedId);
   if (!permit) notFound();
 
-  let imageUrl: string | null = permit.image_url || null;
-  if (!imageUrl) {
+  // 'none' = already searched, nothing found. '' = not yet searched.
+  let imageUrl: string | null =
+    permit.image_url && permit.image_url !== 'none' ? permit.image_url : null;
+  if (!imageUrl && permit.image_url !== 'none') {
     imageUrl = await findUrbanTorontoImage(permit.address);
-    if (imageUrl) cacheImageUrl(decodedId, imageUrl); // fire-and-forget
+    const cacheValue = imageUrl || 'none';
+    cacheImageUrl(decodedId, cacheValue); // fire-and-forget
   }
 
   const color = STATUS_COLORS[permit.status] || '#888';
