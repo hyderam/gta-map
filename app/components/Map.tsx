@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
@@ -157,6 +157,32 @@ function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: any) =>
   return null;
 }
 
+// Spread pins that share the exact same coordinates into a small circle so none overlap.
+function jitterPermits(permits: Permit[]): Permit[] {
+  const groups: Record<string, number[]> = {};
+  permits.forEach((p, i) => {
+    const key = `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(i);
+  });
+  const result = [...permits];
+  for (const key of Object.keys(groups)) {
+    const indices = groups[key];
+    if (indices.length <= 1) continue;
+    const n = indices.length;
+    const radius = 0.00015; // ~15m — non-overlapping from zoom 15+
+    indices.forEach((idx, i) => {
+      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+      result[idx] = {
+        ...permits[idx],
+        lat: permits[idx].lat + radius * Math.cos(angle),
+        lng: permits[idx].lng + radius * Math.sin(angle),
+      };
+    });
+  }
+  return result;
+}
+
 export default function Map() {
   const [permits, setPermits] = useState<Permit[]>([]);
   const [filter, setFilter] = useState<string>('all');
@@ -185,6 +211,8 @@ export default function Map() {
     }, 300);
     return () => clearTimeout(timer);
   }, [bounds, filter]);
+
+  const displayPermits = useMemo(() => jitterPermits(permits), [permits]);
 
   return (
     <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
@@ -217,7 +245,7 @@ export default function Map() {
             });
           }}
         >
-          {permits.map((permit) => (
+          {displayPermits.map((permit) => (
             <Marker
               key={permit.id}
               position={[permit.lat, permit.lng]}
