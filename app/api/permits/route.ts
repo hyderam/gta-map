@@ -75,6 +75,7 @@ export async function GET(request: Request) {
     municipality:    r.municipality,
     postal:          r.postal,
     applicationUrl:  r.application_url,
+    imageUrl:        r.image_url,
   }));
 
   return NextResponse.json(permits);

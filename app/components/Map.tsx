@@ -21,7 +21,7 @@ const STATUS_LABELS: Record<string, string> = {
 function makeIcon(status: string) {
   const color = STATUS_COLORS[status] || '#888';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="${color}" stroke="white" stroke-width="1.5"/></svg>`;
-  return L.divIcon({ html: svg, iconSize: [12, 12], iconAnchor: [6, 6], popupAnchor: [0, -6], className: '' });
+  return L.divIcon({ html: svg, iconSize: [12, 12], iconAnchor: [6, 6], popupAnchor: [0, -8], className: '' });
 }
 
 interface Permit {
@@ -52,95 +52,7 @@ interface Permit {
   municipality: string;
   postal: string;
   applicationUrl: string;
-}
-
-function Row({ label, value }: { label: string; value: string | number }) {
-  if (!value || value === '0' || value === 'Not specified') return null;
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '0.5px solid #f0f0f0', gap: '12px' }}>
-      <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: '12px', color: '#222', textAlign: 'right', fontWeight: 500 }}>{value}</span>
-    </div>
-  );
-}
-
-function SectionTitle({ text }: { text: string }) {
-  return (
-    <div style={{ paddingTop: '12px', marginBottom: '4px', fontSize: '11px', fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-      {text}
-    </div>
-  );
-}
-
-function DetailPanel({ permit, onClose }: { permit: Permit; onClose: () => void }) {
-  const color = STATUS_COLORS[permit.status] || '#888';
-  const label = STATUS_LABELS[permit.status] || permit.status;
-  return (
-    <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '340px', background: 'white', zIndex: 2000, overflowY: 'auto', boxShadow: '-4px 0 20px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0', position: 'sticky', top: 0, background: 'white', zIndex: 1 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, marginRight: '8px' }}>
-            <div style={{ fontSize: '15px', fontWeight: 600, color: '#111', marginBottom: '6px', lineHeight: 1.3 }}>{permit.address}</div>
-            <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: color + '22', color: color }}>{label}</span>
-          </div>
-          <button onClick={onClose} style={{ background: '#f5f5f5', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>X</button>
-        </div>
-      </div>
-      <div style={{ padding: '0 16px 16px', flex: 1 }}>
-        <SectionTitle text="Permit Details" />
-        <Row label="Permit #" value={permit.permitNum} />
-        <Row label="Status" value={permit.rawStatus} />
-        <Row label="Type" value={permit.type} />
-        <Row label="Structure" value={permit.structureType} />
-        <Row label="Work" value={permit.work} />
-        <SectionTitle text="Dates" />
-        <Row label="Application date" value={permit.applicationDate} />
-        <Row label="Issued date" value={permit.issuedDate} />
-        <Row label="Completed date" value={permit.completedDate} />
-        <SectionTitle text="Land Use" />
-        <Row label="Current use" value={permit.currentUse} />
-        <Row label="Proposed use" value={permit.proposedUse} />
-        <SectionTitle text="Units" />
-        <Row label="Units created" value={permit.units} />
-        <Row label="Units lost" value={permit.unitsLost} />
-        <SectionTitle text="Floor Area (m2)" />
-        <Row label="Residential GFA" value={permit.residentialGFA} />
-        <Row label="Commercial GFA" value={permit.commercialGFA} />
-        <Row label="Industrial GFA" value={permit.industrialGFA} />
-        <SectionTitle text="Construction" />
-        <Row label="Est. cost" value={permit.cost} />
-        <Row label="Builder" value={permit.builder} />
-        <SectionTitle text="Location" />
-        <Row label="Ward" value={permit.ward} />
-        <Row label="Municipality" value={permit.municipality} />
-        <Row label="Postal code" value={permit.postal} />
-        {permit.description && (
-          <div>
-            <SectionTitle text="Description" />
-            <p style={{ fontSize: '12px', color: '#555', lineHeight: 1.6, margin: '8px 0' }}>{permit.description}</p>
-          </div>
-        )}
-        <button
-          onClick={() => {
-            if (permit.applicationUrl) {
-              window.open(permit.applicationUrl, '_blank');
-            } else {
-              navigator.clipboard.writeText(permit.permitNum).catch(() => {});
-              window.open('https://secure.toronto.ca/ApplicationStatus/search.do', '_blank');
-            }
-          }}
-          style={{ display: 'block', marginTop: '16px', padding: '10px', background: '#1a1a1a', color: 'white', borderRadius: '8px', textAlign: 'center', fontSize: '13px', fontWeight: 500, border: 'none', cursor: 'pointer', width: '100%' }}
-        >
-          View on City of Toronto
-        </button>
-        {!permit.applicationUrl && (
-          <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '6px', marginBottom: 0 }}>
-            Permit # <strong style={{ color: '#555' }}>{permit.permitNum}</strong> will be copied to your clipboard
-          </p>
-        )}
-      </div>
-    </div>
-  );
+  imageUrl: string;
 }
 
 function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: any) => void }) {
@@ -157,7 +69,6 @@ function MapBoundsTracker({ onBoundsChange }: { onBoundsChange: (bounds: any) =>
   return null;
 }
 
-// Spread pins that share the exact same coordinates into a small circle so none overlap.
 function jitterPermits(permits: Permit[]): Permit[] {
   const groups: Record<string, number[]> = {};
   permits.forEach((p, i) => {
@@ -170,7 +81,7 @@ function jitterPermits(permits: Permit[]): Permit[] {
     const indices = groups[key];
     if (indices.length <= 1) continue;
     const n = indices.length;
-    const radius = 0.00015; // ~15m — non-overlapping from zoom 15+
+    const radius = 0.00015;
     indices.forEach((idx, i) => {
       const angle = (2 * Math.PI * i) / n - Math.PI / 2;
       result[idx] = {
@@ -187,7 +98,6 @@ export default function Map() {
   const [permits, setPermits] = useState<Permit[]>([]);
   const [filter, setFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<Permit | null>(null);
   const [bounds, setBounds] = useState({ north: 43.85, south: 43.55, east: -79.1, west: -79.75 });
 
   useEffect(() => {
@@ -203,10 +113,7 @@ export default function Map() {
     const timer = setTimeout(() => {
       fetch(`/api/permits?${params}`)
         .then((res) => res.json())
-        .then((data) => {
-          setPermits(data);
-          setLoading(false);
-        })
+        .then((data) => { setPermits(data); setLoading(false); })
         .catch(() => setLoading(false));
     }, 300);
     return () => clearTimeout(timer);
@@ -250,21 +157,29 @@ export default function Map() {
               key={permit.id}
               position={[permit.lat, permit.lng]}
               icon={makeIcon(permit.status)}
-              eventHandlers={{ click: () => setSelected(permit) }}
             >
               <Popup>
-                <div style={{ minWidth: '180px' }}>
-                  <strong style={{ fontSize: '13px' }}>{permit.address}</strong>
-                  <div style={{ marginTop: '4px' }}>
-                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, background: STATUS_COLORS[permit.status] + '22', color: STATUS_COLORS[permit.status] }}>
-                      {STATUS_LABELS[permit.status]}
+                <div style={{ minWidth: '220px', maxWidth: '260px', fontFamily: 'system-ui, sans-serif' }}>
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#111', marginBottom: '6px', lineHeight: 1.3 }}>
+                    {permit.address}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, background: (STATUS_COLORS[permit.status] || '#888') + '22', color: STATUS_COLORS[permit.status] || '#888' }}>
+                      {STATUS_LABELS[permit.status] || permit.status}
                     </span>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{permit.type}</div>
-                  <div style={{ fontSize: '12px', color: '#777', marginTop: '2px' }}>{permit.work}</div>
-                  <button onClick={() => setSelected(permit)} style={{ marginTop: '8px', width: '100%', padding: '6px', background: '#1a1a1a', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>
-                    View full details
-                  </button>
+                  <div style={{ fontSize: '12px', color: '#555', marginBottom: '2px' }}>{permit.type}</div>
+                  {permit.applicationDate && (
+                    <div style={{ fontSize: '11px', color: '#999', marginBottom: '8px' }}>Applied {permit.applicationDate}</div>
+                  )}
+                  <a
+                    href={`/project/${encodeURIComponent(permit.id)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ display: 'block', padding: '7px 10px', background: '#1a1a1a', color: 'white', borderRadius: '6px', textAlign: 'center', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    View Project Details →
+                  </a>
                 </div>
               </Popup>
             </Marker>
@@ -280,8 +195,6 @@ export default function Map() {
           </div>
         ))}
       </div>
-
-      {selected && <DetailPanel permit={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
