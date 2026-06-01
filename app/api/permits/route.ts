@@ -74,6 +74,7 @@ export async function GET(request: Request) {
     ward:            r.ward,
     municipality:    r.municipality,
     postal:          r.postal,
+    applicationUrl:  r.application_url,
   }));
 
   return NextResponse.json(permits);

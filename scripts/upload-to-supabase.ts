@@ -52,6 +52,7 @@ async function main() {
     municipality: p.municipality,
     postal: p.postal,
     source: p.source || 'permit',
+    application_url: p.applicationUrl || '',
   }));
 
   const BATCH_SIZE = 500;

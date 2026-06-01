@@ -6,14 +6,14 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const CKAN_BASE = 'https://ckan0.cf.opendata.inter.prod-toronto.ca/api/3/action/datastore_search';
 const PERMITS_RESOURCE = '6d0229af-bc54-46de-9c2b-26759b01dd05';
 const ADDRESS_RESOURCE = '0b3756af-9caf-4f0f-ac28-9c6617adede4';
+const PLANNING_DUMP_URL = 'https://ckan0.cf.opendata.inter.prod-toronto.ca/datastore/dump/8907d8ed-c515-4ce9-b674-9f8c6eefcf0d?format=json';
 
-// Only include permits from the last 7 years
 const cutoff = new Date();
 cutoff.setFullYear(cutoff.getFullYear() - 7);
 const CUTOFF_DATE = cutoff.toISOString().split('T')[0];
 console.log(`Date cutoff: ${CUTOFF_DATE}`);
 
-// Only show actual development/redevelopment — exclude maintenance, repairs, minor alterations
+// Only show actual development/redevelopment work types
 const DEVELOPMENT_WORK_TYPES = new Set([
   'New Building',
   'Addition(s)',
@@ -24,6 +24,9 @@ const DEVELOPMENT_WORK_TYPES = new Set([
   'New Building-Certified',
   'Change of Use',
 ]);
+
+// Planning application types that represent real development proposals
+const PLANNING_APP_TYPES = new Set(['SA', 'OZ', 'ZA', 'OP', 'SB']);
 
 function toTitleCase(str: string): string {
   return str.toLowerCase().split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ').trim();
@@ -49,7 +52,17 @@ function formatCost(cost: string): string {
   return `$${num.toLocaleString()}`;
 }
 
-// Load already-geocoded addresses from Supabase to avoid re-geocoding
+function planningAppType(code: string): string {
+  const types: Record<string, string> = {
+    SA: 'Site Plan Application',
+    OZ: 'Official Plan & Zoning Amendment',
+    ZA: 'Zoning By-law Amendment',
+    OP: 'Official Plan Amendment',
+    SB: 'Draft Plan of Subdivision',
+  };
+  return types[code] || code;
+}
+
 async function loadGeoCache(): Promise<Map<string, { lat: number; lng: number; ward: string; municipality: string }>> {
   console.log('Loading geocode cache from Supabase...');
   const cache = new Map<string, { lat: number; lng: number; ward: string; municipality: string }>();
@@ -101,63 +114,104 @@ async function fetchAllBldPermits(): Promise<any[]> {
     if (!json.success || !json.result?.records?.length) break;
 
     for (const r of json.result.records) {
-      // Only keep BLD (main building permits) - exclude sub-trades like PLB, HVA, DRN, FSU, etc.
       if (!r.PERMIT_NUM?.trim().endsWith(' BLD')) continue;
-      // Only keep permits within the last 7 years
       if (!r.APPLICATION_DATE || r.APPLICATION_DATE < CUTOFF_DATE) continue;
-      // Only keep actual development/redevelopment work types
       if (!DEVELOPMENT_WORK_TYPES.has(r.WORK?.trim())) continue;
       allRecords.push(r);
     }
 
     totalScanned += json.result.records.length;
     if (totalScanned % 10000 === 0) {
-      console.log(`Scanned ${totalScanned} records, found ${allRecords.length} qualifying BLD permits...`);
+      console.log(`Scanned ${totalScanned} records, ${allRecords.length} qualifying BLD permits...`);
     }
-
     offset += BATCH_SIZE;
     if (json.result.records.length < BATCH_SIZE) break;
   }
 
-  console.log(`Total scanned: ${totalScanned}. BLD permits in last 7 years: ${allRecords.length}`);
+  console.log(`BLD permits: ${allRecords.length} (scanned ${totalScanned} total)`);
   return allRecords;
 }
 
-async function main() {
-  const geoCache = await loadGeoCache();
-  const bldRecords = await fetchAllBldPermits();
+async function fetchDevelopmentApplications(): Promise<any[]> {
+  console.log('Fetching development applications...');
+  const res = await fetch(PLANNING_DUMP_URL);
+  const json = await res.json();
+  // CKAN dump returns records as arrays; convert to objects using the fields metadata
+  const fieldNames: string[] = (json.fields || []).map((f: any) => f.id);
+  const records: any[] = (json.records || []).map((row: any) => {
+    if (!Array.isArray(row)) return row; // already an object
+    const obj: any = {};
+    fieldNames.forEach((name, i) => { obj[name] = row[i]; });
+    return obj;
+  });
 
-  // Find addresses not yet in the cache — need fresh geocoding
+  // Filter: relevant types, last 7 years, skip withdrawn/cancelled
+  const SKIP_STATUS = new Set(['Withdrawn', 'Cancelled']);
+  const filtered = records.filter((r: any) =>
+    PLANNING_APP_TYPES.has(r.APPLICATION_TYPE) &&
+    r.DATE_SUBMITTED?.substring(0, 10) >= CUTOFF_DATE &&
+    !SKIP_STATUS.has(r.STATUS)
+  );
+
+  // Deduplicate by FOLDERRSN — one record per application
+  const seen = new Set<string>();
+  const deduped = filtered.filter((r: any) => {
+    const key = String(r.FOLDERRSN);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  console.log(`Planning applications: ${deduped.length} (from ${records.length} total)`);
+  return deduped;
+}
+
+async function geocodeNewAddresses(
+  records: any[],
+  geoCache: Map<string, { lat: number; lng: number; ward: string; municipality: string }>
+) {
   const uncachedMap = new Map<string, { streetNum: string; streetName: string }>();
-  for (const r of bldRecords) {
+  for (const r of records) {
     const addr = buildAddress(r);
     if (!geoCache.has(addr) && !uncachedMap.has(addr)) {
       uncachedMap.set(addr, { streetNum: r.STREET_NUM?.trim() || '', streetName: r.STREET_NAME?.trim() || '' });
     }
   }
 
-  console.log(`Geocoding ${uncachedMap.size} new addresses...`);
-  const uncachedEntries = [...uncachedMap.entries()];
-  const GEOCODE_BATCH = 10;
-
-  for (let i = 0; i < uncachedEntries.length; i += GEOCODE_BATCH) {
-    const batch = uncachedEntries.slice(i, i + GEOCODE_BATCH);
-    await Promise.all(batch.map(async ([addr, { streetNum, streetName }]) => {
-      const geo = await getCoordinates(streetNum, streetName);
-      if (geo) geoCache.set(addr, geo);
-    }));
-    if (i % 500 === 0 && i > 0) console.log(`  Geocoded ${i} / ${uncachedEntries.length}...`);
+  if (uncachedMap.size > 0) {
+    console.log(`Geocoding ${uncachedMap.size} new addresses...`);
+    const entries = [...uncachedMap.entries()];
+    const GEOCODE_BATCH = 10;
+    for (let i = 0; i < entries.length; i += GEOCODE_BATCH) {
+      const batch = entries.slice(i, i + GEOCODE_BATCH);
+      await Promise.all(batch.map(async ([addr, { streetNum, streetName }]) => {
+        const geo = await getCoordinates(streetNum, streetName);
+        if (geo) geoCache.set(addr, geo);
+      }));
+      if (i % 500 === 0 && i > 0) console.log(`  Geocoded ${i} / ${entries.length}...`);
+    }
   }
+}
 
-  // Map every BLD permit to its coordinates — no deduplication, all permits per address included
+async function main() {
+  const geoCache = await loadGeoCache();
+
+  const [bldRecords, planningApps] = await Promise.all([
+    fetchAllBldPermits(),
+    fetchDevelopmentApplications(),
+  ]);
+
+  // Geocode all new addresses from both sources
+  await geocodeNewAddresses([...bldRecords, ...planningApps], geoCache);
+
   const permits: any[] = [];
   let skipped = 0;
 
+  // Map building permits
   for (const r of bldRecords) {
     const addr = buildAddress(r);
     const geo = geoCache.get(addr);
     if (!geo) { skipped++; continue; }
-
     permits.push({
       id: `${r.PERMIT_NUM?.trim()}-${r.REVISION_NUM}`,
       permitNum: r.PERMIT_NUM?.trim() || '',
@@ -186,10 +240,48 @@ async function main() {
       municipality: geo.municipality,
       postal: r.POSTAL || '',
       source: 'permit',
+      applicationUrl: '',
     });
   }
 
-  // Deduplicate by id (same permit_num + revision_num can appear twice in CKAN)
+  // Map planning applications
+  for (const r of planningApps) {
+    const addr = buildAddress(r);
+    const geo = geoCache.get(addr);
+    if (!geo) { skipped++; continue; }
+    permits.push({
+      id: `planning-${r.FOLDERRSN}`,
+      permitNum: r['APPLICATION#'] || '',
+      address: addr,
+      lat: geo.lat,
+      lng: geo.lng,
+      status: 'proposed',
+      rawStatus: r.STATUS || '',
+      type: planningAppType(r.APPLICATION_TYPE),
+      structureType: '',
+      work: planningAppType(r.APPLICATION_TYPE),
+      description: r.DESCRIPTION || '',
+      applicationDate: r.DATE_SUBMITTED?.substring(0, 10) || '',
+      issuedDate: '',
+      completedDate: '',
+      units: '0',
+      unitsLost: '0',
+      cost: 'Not specified',
+      builder: '',
+      currentUse: '',
+      proposedUse: '',
+      residentialGFA: 0,
+      commercialGFA: 0,
+      industrialGFA: 0,
+      ward: r.WARD_NAME || geo.ward,
+      municipality: geo.municipality,
+      postal: r.POSTAL || '',
+      source: 'planning',
+      applicationUrl: r.APPLICATION_URL || '',
+    });
+  }
+
+  // Deduplicate by id
   const seen = new Set<string>();
   const deduped = permits.filter(p => {
     if (seen.has(p.id)) return false;
@@ -197,11 +289,12 @@ async function main() {
     return true;
   });
 
-  console.log(`\nDone: ${deduped.length} permits mapped (${permits.length - deduped.length} duplicates removed), ${skipped} skipped (no geocode match).`);
-  const permits_final = deduped;
+  console.log(`\nDone: ${deduped.length} total (${permits.length - deduped.length} dupes removed, ${skipped} skipped).`);
+  console.log(`  Building permits: ${bldRecords.length - skipped > 0 ? deduped.filter((p: any) => p.source === 'permit').length : '?'}`);
+  console.log(`  Planning apps:    ${deduped.filter((p: any) => p.source === 'planning').length}`);
 
   const outputPath = path.join(process.cwd(), 'public', 'permits.json');
-  fs.writeFileSync(outputPath, JSON.stringify(permits_final, null, 2));
+  fs.writeFileSync(outputPath, JSON.stringify(deduped, null, 2));
   console.log(`Saved to ${outputPath}`);
 }
 

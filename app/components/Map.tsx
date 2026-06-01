@@ -51,6 +51,7 @@ interface Permit {
   ward: string;
   municipality: string;
   postal: string;
+  applicationUrl: string;
 }
 
 function Row({ label, value }: { label: string; value: string | number }) {
@@ -121,16 +122,22 @@ function DetailPanel({ permit, onClose }: { permit: Permit; onClose: () => void 
         )}
         <button
           onClick={() => {
-            navigator.clipboard.writeText(permit.permitNum).catch(() => {});
-            window.open('https://secure.toronto.ca/ApplicationStatus/search.do', '_blank');
+            if (permit.applicationUrl) {
+              window.open(permit.applicationUrl, '_blank');
+            } else {
+              navigator.clipboard.writeText(permit.permitNum).catch(() => {});
+              window.open('https://secure.toronto.ca/ApplicationStatus/search.do', '_blank');
+            }
           }}
           style={{ display: 'block', marginTop: '16px', padding: '10px', background: '#1a1a1a', color: 'white', borderRadius: '8px', textAlign: 'center', fontSize: '13px', fontWeight: 500, border: 'none', cursor: 'pointer', width: '100%' }}
         >
-          Search on City of Toronto
+          View on City of Toronto
         </button>
-        <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '6px', marginBottom: 0 }}>
-          Permit # <strong style={{ color: '#555' }}>{permit.permitNum}</strong> will be copied to your clipboard
-        </p>
+        {!permit.applicationUrl && (
+          <p style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '6px', marginBottom: 0 }}>
+            Permit # <strong style={{ color: '#555' }}>{permit.permitNum}</strong> will be copied to your clipboard
+          </p>
+        )}
       </div>
     </div>
   );
