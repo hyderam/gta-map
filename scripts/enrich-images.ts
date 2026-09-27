@@ -59,43 +59,40 @@ async function getOgImage(url: string): Promise<string | null> {
   } catch { return null; }
 }
 
+// Extract UrbanToronto project URL from a page — checks link hrefs, link text,
+// and full page HTML since search engines often wrap hrefs as redirects.
+async function extractUrbanTorontoUrl(page: any): Promise<string | null> {
+  const html: string = await page.content();
+  const m = html.match(/urbantoronto\.ca\/database\/projects\/[a-z0-9-]+\.[0-9]+/);
+  return m ? `https://${m[0]}` : null;
+}
+
 async function searchForUrbanTorontoUrl(page: any, address: string): Promise<string | null> {
   const parts = address.trim().split(/\s+/);
-  // Use street number + first word of street name for the search
-  const query = `site:urbantoronto.ca "${parts.slice(0, 2).join(' ')}"`;
+  const searchTerms = parts.slice(0, 2).join(' '); // e.g. "1711 KINGSTON"
 
+  // Try DuckDuckGo first — uses site: operator to focus on UrbanToronto
   try {
+    const query = `site:urbantoronto.ca "${searchTerms}" Toronto`;
     await page.goto(`https://duckduckgo.com/?q=${encodeURIComponent(query)}&kl=ca-en`, {
       waitUntil: 'domcontentloaded',
       timeout: 15000,
     });
     await page.waitForTimeout(2500);
+    const url = await extractUrbanTorontoUrl(page);
+    if (url) return url;
+  } catch { /* fall through */ }
 
-    // Extract any UrbanToronto database project URLs from the page
-    const urls: string[] = await page.$$eval('a[href]', (links: HTMLAnchorElement[]) =>
-      links
-        .map(a => a.href)
-        .filter(href => /urbantoronto\.ca\/database\/projects\/[a-z0-9-]+\.[0-9]+/.test(href))
-    );
-
-    if (urls.length > 0) return urls[0];
-  } catch { /* fall through to Bing */ }
-
-  // Fallback: try Bing
+  // Fallback: Bing
   try {
+    const query = `urbantoronto.ca/database/projects "${searchTerms}" Toronto`;
     await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(query)}`, {
       waitUntil: 'domcontentloaded',
       timeout: 15000,
     });
-    await page.waitForTimeout(2000);
-
-    const urls: string[] = await page.$$eval('a[href]', (links: HTMLAnchorElement[]) =>
-      links
-        .map(a => a.href)
-        .filter(href => /urbantoronto\.ca\/database\/projects\/[a-z0-9-]+\.[0-9]+/.test(href))
-    );
-
-    if (urls.length > 0) return urls[0];
+    await page.waitForTimeout(2500);
+    const url = await extractUrbanTorontoUrl(page);
+    if (url) return url;
   } catch { /* give up */ }
 
   return null;
@@ -109,10 +106,18 @@ async function main() {
     return;
   }
 
-  const browser = await chromium.launch({ headless: true });
+  // headless:false avoids bot-detection on search engines.
+  // A browser window will open — you can minimise it; it closes automatically when done.
+  const browser = await chromium.launch({
+    headless: false,
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     locale: 'en-CA',
+  });
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
   });
   const page = await context.newPage();
 
